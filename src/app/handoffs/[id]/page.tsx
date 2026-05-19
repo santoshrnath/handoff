@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth-context";
+import { callerReceiver, includedNoteIdsFor, isSender } from "@/lib/handoff-access";
 import { HandoffPackage } from "@/components/handoff/handoff-package";
 
 export const dynamic = "force-dynamic";
@@ -20,59 +21,80 @@ export default async function HandoffDetail({
     );
   }
 
-  const handoff = await prisma.handoff.findFirst({
-    where: {
-      id: params.id,
-      OR: [
-        { fromUserId: ctx.userId },
-        { toUserId: ctx.userId },
-        ctx.email ? { toEmail: ctx.email } : { id: "__never__" },
-      ],
-    },
+  const handoff = await prisma.handoff.findUnique({
+    where: { id: params.id },
     include: {
+      receivers: { orderBy: { createdAt: "asc" } },
       context: {
         include: {
           stakeholders: true,
           decisions: true,
           openLoops: true,
           watchOuts: true,
-          artifacts: { select: { id: true, originalName: true, summary: true, uploadedAt: true } },
+          artifacts: {
+            select: { id: true, originalName: true, summary: true, uploadedAt: true },
+          },
         },
       },
     },
   });
   if (!handoff) notFound();
 
-  const isSender = handoff.fromUserId === ctx.userId;
-  const isReceiver =
-    handoff.toUserId === ctx.userId ||
-    (!!ctx.email && handoff.toEmail === ctx.email);
-  const noteIds = Array.isArray(handoff.includedHonestNoteIds)
-    ? (handoff.includedHonestNoteIds as string[])
-    : [];
-  const canSeeNotes =
-    isSender ||
-    (isReceiver &&
-      (handoff.status === "TRANSFERRED" || handoff.status === "ACKNOWLEDGED") &&
-      noteIds.length > 0);
+  const sender = isSender(handoff, ctx);
+  const rec = callerReceiver(handoff, ctx);
+  if (!sender && !rec) notFound();
+
+  // Visible honest notes: sender sees union; each receiver sees only their own.
+  let visibleNoteIds: string[] = [];
+  if (sender) {
+    const set = new Set<string>();
+    for (const r of handoff.receivers) {
+      includedNoteIdsFor(r).forEach((id) => set.add(id));
+    }
+    includedNoteIdsFor({
+      id: handoff.id,
+      toUserId: handoff.toUserId,
+      toEmail: handoff.toEmail,
+      status: handoff.status,
+      transferredAt: handoff.transferredAt,
+      acknowledgedAt: handoff.acknowledgedAt,
+      includedHonestNoteIds: handoff.includedHonestNoteIds,
+    }).forEach((id) => set.add(id));
+    visibleNoteIds = Array.from(set);
+  } else if (rec) {
+    const canSee = rec.status === "TRANSFERRED" || rec.status === "ACKNOWLEDGED";
+    if (canSee) visibleNoteIds = includedNoteIdsFor(rec);
+  }
 
   const honestNotes =
-    canSeeNotes && noteIds.length > 0
+    visibleNoteIds.length > 0
       ? await prisma.honestNote.findMany({
-          where: { id: { in: noteIds }, contextId: handoff.contextId },
+          where: { id: { in: visibleNoteIds }, contextId: handoff.contextId },
           select: { id: true, topic: true, content: true, sensitivity: true },
         })
       : [];
 
+  // Q&A scope: sender sees everyone's; each receiver sees their own only.
+  const qaWhere = sender
+    ? { handoffId: handoff.id }
+    : rec && !rec.id.startsWith("legacy:")
+      ? { handoffId: handoff.id, receiverId: rec.id }
+      : { handoffId: handoff.id, askedByUserId: ctx.userId };
+
+  // Same for reality checks.
+  const rcWhere = sender
+    ? { handoffId: handoff.id }
+    : rec && !rec.id.startsWith("legacy:")
+      ? { handoffId: handoff.id, receiverId: rec.id }
+      : { handoffId: handoff.id, markedBy: ctx.userId };
+
   const [qa, realityChecks] = await Promise.all([
     prisma.qaInteraction.findMany({
-      where: { handoffId: handoff.id },
+      where: qaWhere,
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.realityCheck.findMany({
-      where: { handoffId: handoff.id },
-    }),
+    prisma.realityCheck.findMany({ where: rcWhere }),
   ]);
 
   return (
@@ -90,7 +112,17 @@ export default async function HandoffDetail({
           createdAt: handoff.createdAt.toISOString(),
           transferredAt: handoff.transferredAt?.toISOString() ?? null,
           acknowledgedAt: handoff.acknowledgedAt?.toISOString() ?? null,
+          receivers: handoff.receivers.map((r) => ({
+            ...r,
+            includedHonestNoteIds: Array.isArray(r.includedHonestNoteIds)
+              ? (r.includedHonestNoteIds as string[])
+              : [],
+            createdAt: r.createdAt.toISOString(),
+            transferredAt: r.transferredAt?.toISOString() ?? null,
+            acknowledgedAt: r.acknowledgedAt?.toISOString() ?? null,
+          })),
         }}
+        callerReceiverId={rec?.id ?? null}
         honestNotes={honestNotes}
         qa={qa.map((q) => ({
           ...q,
@@ -101,9 +133,10 @@ export default async function HandoffDetail({
           itemId: rc.itemId,
           status: rc.status,
           note: rc.note,
+          receiverId: rc.receiverId,
         }))}
-        isSender={isSender}
-        isReceiver={isReceiver}
+        isSender={sender}
+        isReceiver={!!rec}
       />
     </div>
   );

@@ -4,6 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth-context";
 import { requireSignedIn } from "@/lib/require-auth";
 import { answerReceiverQuestion } from "@/lib/ai/receiver-qa";
+import {
+  callerReceiver,
+  includedNoteIdsFor,
+  isSender,
+} from "@/lib/handoff-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,16 +21,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (gate) return gate;
   const ctx = await getAuthContext();
 
-  const handoff = await prisma.handoff.findFirst({
-    where: {
-      id: params.id,
-      OR: [
-        { fromUserId: ctx.userId ?? "__none__" },
-        { toUserId: ctx.userId ?? "__none__" },
-        ctx.email ? { toEmail: ctx.email } : { id: "__never__" },
-      ],
-    },
+  const handoff = await prisma.handoff.findUnique({
+    where: { id: params.id },
     include: {
+      receivers: true,
       context: {
         include: {
           stakeholders: true,
@@ -39,28 +38,35 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   });
   if (!handoff) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
+  const sender = isSender(handoff, ctx);
+  const rec = callerReceiver(handoff, ctx);
+  if (!sender && !rec) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const body = await req.json();
   const parsed = Schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
-  // Sources fed to the model: structured context + honest notes only if the
-  // requester is allowed to see them.
-  const isSender = handoff.fromUserId === ctx.userId;
-  const isReceiver =
-    handoff.toUserId === ctx.userId ||
-    (!!ctx.email && handoff.toEmail === ctx.email);
-  const noteIds = Array.isArray(handoff.includedHonestNoteIds)
-    ? (handoff.includedHonestNoteIds as string[])
-    : [];
-  const canSeeNotes =
-    isSender ||
-    (isReceiver &&
-      (handoff.status === "TRANSFERRED" || handoff.status === "ACKNOWLEDGED") &&
-      noteIds.length > 0);
+  // Honest-notes visibility: sender sees all, receiver sees only their own
+  // included set once status >= TRANSFERRED.
+  let noteIds: string[] = [];
+  if (sender) {
+    const set = new Set<string>();
+    for (const r of handoff.receivers) {
+      includedNoteIdsFor(r).forEach((id) => set.add(id));
+    }
+    noteIds = Array.from(set);
+  } else if (
+    rec &&
+    (rec.status === "TRANSFERRED" || rec.status === "ACKNOWLEDGED")
+  ) {
+    noteIds = includedNoteIdsFor(rec);
+  }
 
-  const honestNotes = canSeeNotes && noteIds.length > 0
+  const honestNotes = noteIds.length > 0
     ? await prisma.honestNote.findMany({
         where: { id: { in: noteIds }, contextId: handoff.contextId },
       })
@@ -89,7 +95,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         .join("\n"),
     });
   }
-
   for (const s of c.stakeholders) {
     sources.push({
       kind: "stakeholder",
@@ -177,6 +182,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     data: {
       tenantId: handoff.tenantId,
       handoffId: handoff.id,
+      receiverId: rec && !rec.id.startsWith("legacy:") ? rec.id : null,
       askedByUserId: ctx.userId!,
       question: parsed.data.question,
       answer: result.answer,
@@ -189,17 +195,27 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const ctx = await getAuthContext();
+  const handoff = await prisma.handoff.findUnique({
+    where: { id: params.id },
+    include: { receivers: true },
+  });
+  if (!handoff) return NextResponse.json({ interactions: [] });
+
+  const sender = isSender(handoff, ctx);
+  const rec = callerReceiver(handoff, ctx);
+  if (!sender && !rec) {
+    return NextResponse.json({ interactions: [] });
+  }
+
+  // Sender sees all Q&A across receivers; each receiver sees only their own.
+  const where = sender
+    ? { handoffId: handoff.id }
+    : rec && !rec.id.startsWith("legacy:")
+      ? { handoffId: handoff.id, receiverId: rec.id }
+      : { handoffId: handoff.id, askedByUserId: ctx.userId ?? "__none__" };
+
   const list = await prisma.qaInteraction.findMany({
-    where: {
-      handoffId: params.id,
-      handoff: {
-        OR: [
-          { fromUserId: ctx.userId ?? "__none__" },
-          { toUserId: ctx.userId ?? "__none__" },
-          ctx.email ? { toEmail: ctx.email } : { id: "__never__" },
-        ],
-      },
-    },
+    where,
     orderBy: { createdAt: "desc" },
     take: 50,
   });

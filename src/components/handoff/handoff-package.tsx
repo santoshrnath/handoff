@@ -15,9 +15,24 @@ import {
   FileText,
   Sparkles,
   ShieldCheck,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { cn, initials, timeAgo } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
+
+type Receiver = {
+  id: string;
+  toEmail: string | null;
+  toName: string | null;
+  toUserId: string | null;
+  audienceLabel: string | null;
+  status: string;
+  includedHonestNoteIds: string[];
+  createdAt: string;
+  transferredAt: string | null;
+  acknowledgedAt: string | null;
+};
 
 type Handoff = {
   id: string;
@@ -29,6 +44,7 @@ type Handoff = {
   fromEmail: string | null;
   toEmail: string | null;
   packageNote: string | null;
+  receivers: Receiver[];
   context: {
     id: string;
     title: string;
@@ -103,15 +119,17 @@ type RealityCheckMap = Array<{
   itemId: string;
   status: RealityCheckStatus;
   note: string | null;
+  receiverId?: string | null;
 }>;
 
-type Tab = "overview" | "ask" | "compare" | "feedback";
+type Tab = "overview" | "ask" | "compare" | "feedback" | "receivers";
 
 export function HandoffPackage({
   handoff,
   honestNotes,
   qa: initialQa,
   realityChecks: initialRealityChecks,
+  callerReceiverId,
   isSender,
   isReceiver,
 }: {
@@ -119,6 +137,7 @@ export function HandoffPackage({
   honestNotes: Note[];
   qa: QA[];
   realityChecks: RealityCheckMap;
+  callerReceiverId: string | null;
   isSender: boolean;
   isReceiver: boolean;
 }) {
@@ -215,25 +234,36 @@ export function HandoffPackage({
             <div className="mt-1 text-xs text-slate-400">
               {handoff.type.replace("_", " ")} ·{" "}
               {handoff.fromEmail ? `From ${handoff.fromEmail}` : "From you"}
-              {handoff.toEmail ? ` · To ${handoff.toEmail}` : ""}
+              {handoff.receivers.length > 0
+                ? ` · ${handoff.receivers.length} receiver${handoff.receivers.length === 1 ? "" : "s"}`
+                : handoff.toEmail
+                  ? ` · To ${handoff.toEmail}`
+                  : ""}
               {" · "}
               {timeAgo(handoff.createdAt)}
             </div>
           </div>
-          {isReceiver && handoff.status === "TRANSFERRED" && (
-            <button
-              onClick={acknowledge}
-              disabled={ackBusy}
-              className="btn-primary text-xs"
-            >
-              {ackBusy ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Check className="h-3.5 w-3.5" />
-              )}
-              Acknowledge receipt
-            </button>
-          )}
+          {(() => {
+            const mine = callerReceiverId
+              ? handoff.receivers.find((r) => r.id === callerReceiverId)
+              : null;
+            const myStatus = mine?.status ?? handoff.status;
+            if (!isReceiver || myStatus !== "TRANSFERRED") return null;
+            return (
+              <button
+                onClick={acknowledge}
+                disabled={ackBusy}
+                className="btn-primary text-xs"
+              >
+                {ackBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                Acknowledge receipt
+              </button>
+            );
+          })()}
         </div>
 
         {handoff.packageNote && (
@@ -245,13 +275,14 @@ export function HandoffPackage({
           </div>
         )}
 
-        <nav className="mt-5 flex items-center gap-1 border-b border-white/5">
+        <nav className="mt-5 flex items-center gap-1 overflow-x-auto border-b border-white/5 scrollbar-thin">
           {(
             [
               ["overview", "Overview"],
               ["ask", "Ask Questions"],
               ["compare", "Reality Check"],
               ["feedback", "Feedback"],
+              ...(isSender ? [["receivers", "Receivers"] as const] : []),
             ] as const
           ).map(([id, label]) => (
             <button
@@ -536,6 +567,10 @@ export function HandoffPackage({
         <div className="card text-sm text-slate-400">
           Only the receiver can leave feedback.
         </div>
+      )}
+
+      {tab === "receivers" && isSender && (
+        <ReceiversTab handoff={handoff} honestNotes={honestNotes} />
       )}
     </div>
   );
@@ -866,6 +901,266 @@ function FeedbackTab({ handoffId }: { handoffId: string }) {
             Log gap
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ReceiversTab({
+  handoff,
+  honestNotes,
+}: {
+  handoff: Handoff;
+  honestNotes: Note[];
+}) {
+  const toast = useToast();
+  const router = useRouter();
+  const [adding, setAdding] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newAudience, setNewAudience] = useState("");
+  const [newNoteIds, setNewNoteIds] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+
+  function toggleNewNote(id: string) {
+    setNewNoteIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function addAndTransfer() {
+    if (!newEmail.trim()) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/handoffs/${handoff.id}/receivers`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          toEmail: newEmail.trim(),
+          audienceLabel: newAudience.trim() || undefined,
+          includedHonestNoteIds: Array.from(newNoteIds),
+        }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error ?? "Failed");
+      }
+      const { receiver } = await r.json();
+      const t = await fetch(`/api/handoffs/${handoff.id}/transfer`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ receiverId: receiver.id }),
+      });
+      if (!t.ok) {
+        const j = await t.json().catch(() => ({}));
+        throw new Error(j.error ?? "Failed to transfer");
+      }
+      toast.success("Receiver added & notified");
+      setAdding(false);
+      setNewEmail("");
+      setNewAudience("");
+      setNewNoteIds(new Set());
+      router.refresh();
+    } catch (err) {
+      toast.error(
+        "Couldn't add",
+        String(err instanceof Error ? err.message : err),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(receiverId: string) {
+    if (!confirm("Remove this receiver before they're notified?")) return;
+    try {
+      const r = await fetch(
+        `/api/handoffs/${handoff.id}/receivers/${receiverId}`,
+        { method: "DELETE" },
+      );
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.message ?? j.error ?? "Couldn't remove");
+      }
+      toast.success("Receiver removed");
+      router.refresh();
+    } catch (err) {
+      toast.error(
+        "Remove failed",
+        String(err instanceof Error ? err.message : err),
+      );
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-violet-300" />
+            <h2 className="text-base font-semibold">Receivers</h2>
+            <span className="pill text-[10px]">{handoff.receivers.length}</span>
+          </div>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Each receiver has their own redaction, status, share link, and
+            private Q&amp;A / reality-check stream. They don&apos;t see each
+            other.
+          </p>
+        </div>
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="btn-ghost text-xs"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add receiver
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <div className="mt-4 space-y-3 rounded-xl border border-violet-glow/30 bg-violet-glow/[0.04] p-4">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              placeholder="email@company.com"
+              className="input md:col-span-2"
+              autoFocus
+            />
+            <input
+              value={newAudience}
+              onChange={(e) => setNewAudience(e.target.value)}
+              placeholder="audience label (optional)"
+              className="input"
+            />
+          </div>
+          {honestNotes.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                <Lock className="h-3 w-3 text-rose-300" />
+                Honest notes for this receiver
+                <span className="text-rose-200/70">
+                  ({newNoteIds.size}/{honestNotes.length})
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-2">
+                {honestNotes.map((n) => (
+                  <label
+                    key={n.id}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-2 rounded-lg border p-2 text-xs",
+                      newNoteIds.has(n.id)
+                        ? "border-violet-glow/40 bg-violet-glow/[0.08]"
+                        : "border-white/5 bg-white/[0.02] hover:border-white/10",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={newNoteIds.has(n.id)}
+                      onChange={() => toggleNewNote(n.id)}
+                      className="mt-0.5 h-3.5 w-3.5 accent-violet-500"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium text-white">
+                        {n.topic}
+                      </div>
+                      <div className="text-[9px] uppercase tracking-[0.12em] text-rose-200">
+                        {n.sensitivity}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                setAdding(false);
+                setNewEmail("");
+                setNewAudience("");
+                setNewNoteIds(new Set());
+              }}
+              className="btn-ghost text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={addAndTransfer}
+              disabled={busy || !newEmail.trim()}
+              className="btn-primary text-xs"
+            >
+              {busy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+              Add & notify
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 space-y-2">
+        {handoff.receivers.length === 0 ? (
+          <Empty>No receivers yet.</Empty>
+        ) : (
+          handoff.receivers.map((r) => (
+            <div
+              key={r.id}
+              className="rounded-xl border border-white/5 bg-white/[0.02] p-3"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="truncate text-sm font-medium text-white">
+                      {r.toEmail ?? "—"}
+                    </div>
+                    {r.audienceLabel && (
+                      <span className="pill text-[10px]">
+                        {r.audienceLabel}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        "pill text-[10px]",
+                        r.status === "ACKNOWLEDGED"
+                          ? "pill-emerald"
+                          : r.status === "TRANSFERRED"
+                            ? "pill-cyan"
+                            : "pill-amber",
+                      )}
+                    >
+                      {r.status}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-slate-500">
+                    {r.includedHonestNoteIds.length} honest note
+                    {r.includedHonestNoteIds.length === 1 ? "" : "s"} included ·{" "}
+                    Added {timeAgo(r.createdAt)}
+                    {r.transferredAt
+                      ? ` · Transferred ${timeAgo(r.transferredAt)}`
+                      : ""}
+                    {r.acknowledgedAt
+                      ? ` · Ack'd ${timeAgo(r.acknowledgedAt)}`
+                      : ""}
+                  </div>
+                </div>
+                {r.status === "DRAFT" && (
+                  <button
+                    onClick={() => revoke(r.id)}
+                    className="rounded-lg border border-white/10 px-2 py-1 text-[10px] text-slate-300 hover:border-rose-glow/30 hover:bg-rose-glow/10 hover:text-rose-200"
+                  >
+                    <Trash2 className="mr-1 inline h-3 w-3" /> Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

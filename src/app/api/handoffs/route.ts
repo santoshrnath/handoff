@@ -15,12 +15,18 @@ const HandoffTypeEnum = z.enum([
   "ONBOARDING",
 ]);
 
+const ReceiverSchema = z.object({
+  toEmail: z.string().email(),
+  toName: z.string().max(200).optional(),
+  audienceLabel: z.string().max(200).optional(),
+  includedHonestNoteIds: z.array(z.string()).optional(),
+});
+
 const CreateSchema = z.object({
   contextId: z.string().min(1),
   type: HandoffTypeEnum.default("ROTATION"),
-  toEmail: z.string().email().optional(),
   packageNote: z.string().max(4000).optional(),
-  includedHonestNoteIds: z.array(z.string()).optional(),
+  receivers: z.array(ReceiverSchema).min(1).max(10),
 });
 
 export async function GET() {
@@ -34,18 +40,25 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
       include: {
         context: { select: { id: true, title: true, type: true } },
+        receivers: true,
       },
     }),
     prisma.handoff.findMany({
       where: {
         OR: [
+          { receivers: { some: { toUserId: ctx.userId } } },
+          ctx.email
+            ? { receivers: { some: { toEmail: { equals: ctx.email, mode: "insensitive" } } } }
+            : { id: "__never__" },
+          // Legacy fallback for pre-multi-receiver rows.
           { toUserId: ctx.userId },
-          ctx.email ? { toEmail: ctx.email } : { id: "__never__" },
+          ctx.email ? { toEmail: { equals: ctx.email, mode: "insensitive" } } : { id: "__never__" },
         ],
       },
       orderBy: { createdAt: "desc" },
       include: {
         context: { select: { id: true, title: true, type: true } },
+        receivers: true,
       },
     }),
   ]);
@@ -71,18 +84,36 @@ export async function POST(req: Request) {
   });
   if (!owned) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
+  // Dedupe receivers by email (case-insensitive).
+  const seen = new Set<string>();
+  const receivers = parsed.data.receivers.filter((r) => {
+    const key = r.toEmail.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   const handoff = await prisma.handoff.create({
     data: {
       tenantId: owned.tenantId,
       contextId: owned.id,
       fromUserId: ctx.userId!,
       fromEmail: ctx.email ?? undefined,
-      toEmail: parsed.data.toEmail,
       type: parsed.data.type,
       packageNote: parsed.data.packageNote,
-      includedHonestNoteIds: parsed.data.includedHonestNoteIds ?? [],
       status: "DRAFT",
+      receivers: {
+        create: receivers.map((r) => ({
+          tenantId: owned.tenantId,
+          toEmail: r.toEmail,
+          toName: r.toName,
+          audienceLabel: r.audienceLabel,
+          includedHonestNoteIds: r.includedHonestNoteIds ?? [],
+          status: "DRAFT",
+        })),
+      },
     },
+    include: { receivers: true },
   });
   return NextResponse.json({ handoff });
 }

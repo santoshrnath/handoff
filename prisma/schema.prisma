@@ -357,22 +357,26 @@ model Handoff {
 
   fromUserId      String
   fromEmail       String?
-  toUserId        String?       // null until accepted
-  toEmail         String?       // who it was sent to (may be external)
-  shareToken      String        @unique @default(cuid())
 
   type            HandoffType   @default(ROTATION)
-  status          HandoffStatus @default(DRAFT)
   packageNote     String?       @db.Text
 
-  redactionLog    Json?         // [{ noteId, action: "REDACT" | "INCLUDE", reason }]
-  includedHonestNoteIds Json?   // string[]
-
-  createdAt       DateTime      @default(now())
+  // Legacy single-receiver fields. Kept nullable for back-compat with
+  // pre-multi-receiver rows. New handoffs leave these null and use the
+  // receivers[] relation. Status is derived (= worst of receivers' states).
+  toUserId        String?
+  toEmail         String?
+  shareToken      String?       @unique @default(cuid())
+  status          HandoffStatus @default(DRAFT)
+  includedHonestNoteIds Json?
+  redactionLog    Json?
   transferredAt   DateTime?
   acknowledgedAt  DateTime?
 
-  context         Context       @relation(fields: [contextId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+
+  context         Context           @relation(fields: [contextId], references: [id], onDelete: Cascade)
+  receivers       HandoffReceiver[]
   receiverFeedback ReceiverFeedback[]
   qa              QaInteraction[]
   realityChecks   RealityCheck[]
@@ -383,11 +387,44 @@ model Handoff {
   @@index([toUserId])
 }
 
+// Per-receiver row on a handoff. Each receiver has their own redaction
+// (which honest notes they see), their own status, their own share token,
+// and their own Q&A / feedback / reality-check stream.
+model HandoffReceiver {
+  id              String        @id @default(cuid())
+  tenantId        String        @default("default")
+  handoffId       String
+
+  toUserId        String?       // null until they sign in and claim
+  toEmail         String?
+  toName          String?       // optional display label
+
+  shareToken      String        @unique @default(cuid())
+  status          HandoffStatus @default(DRAFT)
+  includedHonestNoteIds Json?
+  audienceLabel   String?       // free-text e.g. "peer manager", "junior PM"
+
+  createdAt       DateTime      @default(now())
+  transferredAt   DateTime?
+  acknowledgedAt  DateTime?
+
+  handoff         Handoff           @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  qa              QaInteraction[]
+  feedback        ReceiverFeedback[]
+  realityChecks   RealityCheck[]
+
+  @@index([handoffId])
+  @@index([tenantId])
+  @@index([toUserId])
+  @@index([toEmail])
+}
+
 // 30 / 60 / 90 "I wish I'd known" feedback from the receiver.
 model ReceiverFeedback {
   id           String   @id @default(cuid())
   tenantId     String   @default("default")
   handoffId    String
+  receiverId   String?
 
   daysIn       Int
   content      String   @db.Text
@@ -396,9 +433,11 @@ model ReceiverFeedback {
 
   createdAt    DateTime @default(now())
 
-  handoff      Handoff  @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  handoff      Handoff          @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  receiver     HandoffReceiver? @relation(fields: [receiverId], references: [id], onDelete: Cascade)
 
   @@index([handoffId])
+  @@index([receiverId])
   @@index([tenantId])
 }
 
@@ -407,6 +446,7 @@ model QaInteraction {
   id           String   @id @default(cuid())
   tenantId     String   @default("default")
   handoffId    String
+  receiverId   String?
   askedByUserId String
 
   question     String   @db.Text
@@ -415,9 +455,11 @@ model QaInteraction {
 
   createdAt    DateTime @default(now())
 
-  handoff      Handoff  @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  handoff      Handoff          @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  receiver     HandoffReceiver? @relation(fields: [receiverId], references: [id], onDelete: Cascade)
 
   @@index([handoffId])
+  @@index([receiverId])
   @@index([tenantId])
 }
 
@@ -426,6 +468,7 @@ model RealityCheck {
   id           String              @id @default(cuid())
   tenantId     String              @default("default")
   handoffId    String
+  receiverId   String?
   itemKind     RealityCheckItemKind
   itemId       String
   status       RealityCheckStatus
@@ -435,9 +478,11 @@ model RealityCheck {
   updatedAt    DateTime            @updatedAt
 
   handoff      Handoff             @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  receiver     HandoffReceiver?    @relation(fields: [receiverId], references: [id], onDelete: Cascade)
 
-  @@unique([handoffId, itemKind, itemId])
+  @@unique([handoffId, itemKind, itemId, receiverId])
   @@index([handoffId])
+  @@index([receiverId])
   @@index([tenantId])
 }
 

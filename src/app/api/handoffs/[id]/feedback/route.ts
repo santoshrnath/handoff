@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth-context";
 import { requireSignedIn } from "@/lib/require-auth";
+import { callerReceiver } from "@/lib/handoff-access";
 
 export const dynamic = "force-dynamic";
 
@@ -17,16 +18,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const gate = await requireSignedIn();
   if (gate) return gate;
   const ctx = await getAuthContext();
-  const handoff = await prisma.handoff.findFirst({
-    where: {
-      id: params.id,
-      OR: [
-        { toUserId: ctx.userId ?? "__none__" },
-        ctx.email ? { toEmail: ctx.email } : { id: "__never__" },
-      ],
-    },
+  const handoff = await prisma.handoff.findUnique({
+    where: { id: params.id },
+    include: { receivers: true },
   });
   if (!handoff) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  const rec = callerReceiver(handoff, ctx);
+  if (!rec) return NextResponse.json({ error: "not_a_receiver" }, { status: 403 });
 
   const body = await req.json();
   const parsed = Schema.safeParse(body);
@@ -38,6 +37,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     data: {
       tenantId: handoff.tenantId,
       handoffId: handoff.id,
+      receiverId: rec.id.startsWith("legacy:") ? null : rec.id,
       daysIn: parsed.data.daysIn,
       content: parsed.data.content,
       valueRating: parsed.data.valueRating,
