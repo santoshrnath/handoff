@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body {
+    @apply bg-ink-950 text-slate-100;
+  }
+  * {
+    @apply border-white/5;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl;
+  }
+  .glass-strong {
+    @apply rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-xl shadow-card-lift;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-300;
+  }
+  .pill-violet {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-violet-glow/30 bg-violet-glow/10 px-2.5 py-1 text-xs font-medium text-violet-200;
+  }
+  .pill-emerald {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-emerald-glow/30 bg-emerald-glow/10 px-2.5 py-1 text-xs font-medium text-emerald-200;
+  }
+  .pill-cyan {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-cyan-glow/30 bg-cyan-glow/10 px-2.5 py-1 text-xs font-medium text-cyan-200;
+  }
+  .pill-amber {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-200;
+  }
+  .pill-rose {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-rose-glow/30 bg-rose-glow/10 px-2.5 py-1 text-xs font-medium text-rose-200;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:from-violet-500 hover:to-violet-400 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06];
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-rose-glow/30 bg-rose-glow/10 px-4 py-2.5 text-sm font-semibold text-rose-200 transition hover:bg-rose-glow/20;
+  }
+  .card {
+    @apply glass-strong p-6;
+  }
+  .input {
+    @apply w-full rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-violet-glow/40 focus:bg-white/[0.06] focus:ring-2 focus:ring-violet-glow/20;
+  }
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-[0.12em] text-slate-400 mb-1.5;
+  }
+  .h-cinematic {
+    @apply font-display text-3xl font-semibold tracking-tight md:text-4xl;
+  }
+  .tab {
+    @apply relative px-3 py-2 text-sm font-medium text-slate-400 transition hover:text-slate-200;
+  }
+  .tab-active {
+    @apply text-violet-100 after:absolute after:left-0 after:right-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-gradient-to-r after:from-violet-500 after:to-violet-400;
+  }
+}
+
+@layer utilities {
+  .text-gradient-violet {
+    background: linear-gradient(180deg, #ffffff 0%, #c4b5fd 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-gradient-cyan {
+    background: linear-gradient(180deg, #ffffff 0%, #67e8f9 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(139, 92, 246, 0.18) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2.5s linear infinite;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+}

@@ -1,0 +1,413 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ContextBridge — Prisma schema
+// ─────────────────────────────────────────────────────────────────────────────
+// Domain: Context (the thing being handed off), with nested Stakeholders,
+// Decisions, OpenLoops, WatchOuts, HonestNotes. Handoff binds a Context to
+// a transfer event (from -> to). Interview captures the AI interrogation.
+//
+// Every row is tenant-scoped via `tenantId` (Clerk user id, or "default").
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ContextType {
+  PROJECT
+  CLIENT
+  WORKSTREAM
+  PROCESS
+  STAKEHOLDER
+  ACCOUNT
+}
+
+enum ContextStatus {
+  DRAFT
+  ACTIVE
+  STANDING
+  ARCHIVED
+}
+
+enum Importance {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HandoffType {
+  LEAVE
+  ROTATION
+  DELEGATION
+  ATTRITION
+  STAND_IN
+  ONBOARDING
+}
+
+enum HandoffStatus {
+  DRAFT
+  READY
+  TRANSFERRED
+  ACKNOWLEDGED
+}
+
+enum SensitivityLevel {
+  PUBLIC
+  TEAM
+  PRIVATE
+  POLITICAL
+}
+
+enum InterviewStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum InterviewPhase {
+  WARM_UP
+  CORE
+  DEEP_DIVE
+  WRAP_UP
+}
+
+enum MessageRole {
+  ASSISTANT
+  USER
+  SYSTEM
+}
+
+enum RelationshipKind {
+  CHAMPION
+  ALLY
+  NEUTRAL
+  SKEPTIC
+  BLOCKER
+  INFLUENCER
+  DECISION_MAKER
+  UNKNOWN
+}
+
+enum OpenLoopState {
+  IN_FLIGHT
+  STUCK
+  DEFERRED
+  BLOCKED
+}
+
+enum WatchOutSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// ─── Core domain ─────────────────────────────────────────────────────────────
+
+model Context {
+  id              String         @id @default(cuid())
+  tenantId        String         @default("default")
+  ownerUserId     String
+  ownerEmail      String?
+
+  title           String
+  type            ContextType    @default(PROJECT)
+  status          ContextStatus  @default(DRAFT)
+  importance      Importance     @default(MEDIUM)
+  sensitivity     SensitivityLevel @default(TEAM)
+
+  // Snapshot
+  description     String?        @db.Text
+  currentPhase    String?
+  orgPosition     String?
+
+  // Process narrative
+  processFlow     String?        @db.Text
+  cadences        Json?
+  tools           Json?
+  workarounds     String?        @db.Text
+
+  completeness    Int            @default(0) // 0..100
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  stakeholders    Stakeholder[]
+  decisions       Decision[]
+  openLoops       OpenLoop[]
+  watchOuts       WatchOut[]
+  honestNotes     HonestNote[]
+  artifacts       Artifact[]
+  handoffs        Handoff[]
+  interviews      InterviewSession[]
+  driftEvents     DriftEvent[]
+
+  @@index([tenantId])
+  @@index([ownerUserId])
+  @@index([status])
+}
+
+model Stakeholder {
+  id                  String           @id @default(cuid())
+  tenantId            String           @default("default")
+  contextId           String
+
+  name                String
+  role                String?
+  email               String?
+  relationship        RelationshipKind @default(UNKNOWN)
+  operatingStyle      String?          @db.Text
+  whatTheyCareAbout   String?          @db.Text
+  howToWorkWithThem   String?          @db.Text
+  watchOuts           String?          @db.Text
+  interactionSummary  String?          @db.Text
+
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  context             Context          @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contextId])
+}
+
+model Decision {
+  id                   String   @id @default(cuid())
+  tenantId             String   @default("default")
+  contextId            String
+
+  title                String
+  rationale            String?  @db.Text
+  alternativesRejected String?  @db.Text
+  whoWouldPushBack     String?  @db.Text
+  decidedOn            DateTime?
+  source               String?
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  context              Context  @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contextId])
+}
+
+model OpenLoop {
+  id          String         @id @default(cuid())
+  tenantId    String         @default("default")
+  contextId   String
+
+  title       String
+  detail      String?        @db.Text
+  owner       String?
+  blocker     String?        @db.Text
+  state       OpenLoopState  @default(IN_FLIGHT)
+  targetDate  DateTime?
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  context     Context        @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contextId])
+}
+
+model WatchOut {
+  id         String           @id @default(cuid())
+  tenantId   String           @default("default")
+  contextId  String
+
+  topic      String
+  detail     String?          @db.Text
+  severity   WatchOutSeverity @default(MEDIUM)
+  triedBefore String?         @db.Text
+
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  context    Context          @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contextId])
+}
+
+// Politically-sensitive notes. Stay private to owner until an explicit
+// transfer; per-receiver redaction is applied at transfer time.
+model HonestNote {
+  id              String           @id @default(cuid())
+  tenantId        String           @default("default")
+  contextId       String
+
+  topic           String
+  content         String           @db.Text
+  sensitivity     SensitivityLevel @default(POLITICAL)
+  transferRules   Json?            // { receivers: ["user_xxx"], redactedFor: ["user_yyy"] }
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  context         Context          @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contextId])
+}
+
+model Artifact {
+  id            String   @id @default(cuid())
+  tenantId      String   @default("default")
+  contextId     String
+
+  originalName  String
+  mimeType      String
+  sizeBytes     Int
+  storageKey    String
+  textStorageKey String?
+  summary       String?  @db.Text
+  extractedJson Json?
+  uploadedBy    String?
+  uploadedAt    DateTime @default(now())
+
+  context       Context  @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contextId])
+}
+
+// ─── Interview (the AI interrogator) ─────────────────────────────────────────
+
+model InterviewSession {
+  id           String          @id @default(cuid())
+  tenantId     String          @default("default")
+  contextId    String
+  startedByUserId String
+
+  phase        InterviewPhase  @default(WARM_UP)
+  status       InterviewStatus @default(IN_PROGRESS)
+  mode         String          @default("full") // "full" | "stand_in"
+  durationSeconds Int          @default(0)
+
+  startedAt    DateTime        @default(now())
+  completedAt  DateTime?
+
+  messages     InterviewMessage[]
+  context      Context         @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contextId])
+}
+
+model InterviewMessage {
+  id            String       @id @default(cuid())
+  tenantId      String       @default("default")
+  sessionId     String
+
+  role          MessageRole
+  content       String       @db.Text
+  phase         InterviewPhase @default(WARM_UP)
+  meta          Json?
+
+  createdAt     DateTime     @default(now())
+
+  session       InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([tenantId])
+}
+
+// ─── Handoff (the transfer event) ────────────────────────────────────────────
+
+model Handoff {
+  id              String        @id @default(cuid())
+  tenantId        String        @default("default")
+  contextId       String
+
+  fromUserId      String
+  fromEmail       String?
+  toUserId        String?       // null until accepted
+  toEmail         String?       // who it was sent to (may be external)
+  shareToken      String        @unique @default(cuid())
+
+  type            HandoffType   @default(ROTATION)
+  status          HandoffStatus @default(DRAFT)
+  packageNote     String?       @db.Text
+
+  redactionLog    Json?         // [{ noteId, action: "REDACT" | "INCLUDE", reason }]
+  includedHonestNoteIds Json?   // string[]
+
+  createdAt       DateTime      @default(now())
+  transferredAt   DateTime?
+  acknowledgedAt  DateTime?
+
+  context         Context       @relation(fields: [contextId], references: [id], onDelete: Cascade)
+  receiverFeedback ReceiverFeedback[]
+  qa              QaInteraction[]
+
+  @@index([tenantId])
+  @@index([contextId])
+  @@index([fromUserId])
+  @@index([toUserId])
+}
+
+// 30 / 60 / 90 "I wish I'd known" feedback from the receiver.
+model ReceiverFeedback {
+  id           String   @id @default(cuid())
+  tenantId     String   @default("default")
+  handoffId    String
+
+  daysIn       Int
+  content      String   @db.Text
+  valueRating  Int?     // 1..5
+  gapFlag      Boolean  @default(false)
+
+  createdAt    DateTime @default(now())
+
+  handoff      Handoff  @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+
+  @@index([handoffId])
+  @@index([tenantId])
+}
+
+// Receiver-side Q&A history (the "ask the handoff" feature).
+model QaInteraction {
+  id           String   @id @default(cuid())
+  tenantId     String   @default("default")
+  handoffId    String
+  askedByUserId String
+
+  question     String   @db.Text
+  answer       String   @db.Text
+  citations    Json?    // [{ source: "decision" | "stakeholder" | "artifact", id, snippet }]
+
+  createdAt    DateTime @default(now())
+
+  handoff      Handoff  @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+
+  @@index([handoffId])
+  @@index([tenantId])
+}
+
+// Drift detection — flag when reality diverges from documented context.
+model DriftEvent {
+  id           String   @id @default(cuid())
+  tenantId     String   @default("default")
+  contextId    String
+
+  topic        String
+  observation  String   @db.Text
+  proposedUpdate String? @db.Text
+  resolved     Boolean  @default(false)
+
+  createdAt    DateTime @default(now())
+
+  context      Context  @relation(fields: [contextId], references: [id], onDelete: Cascade)
+
+  @@index([contextId])
+  @@index([tenantId])
+}

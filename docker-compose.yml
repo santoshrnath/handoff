@@ -1,0 +1,72 @@
+# =============================================================================
+# ContextBridge — production compose
+# =============================================================================
+# Spins up:
+#   - contexthandoff-app  (Next.js, port ${CONTEXTHANDOFF_PORT:-3071})
+#   - contexthandoff-db   (Postgres 17)
+#
+# On Hetzner: routed by the shared Coolify-managed Traefik network.
+# Locally:    `docker compose up` then visit http://localhost:${CONTEXTHANDOFF_PORT}.
+# =============================================================================
+services:
+  contexthandoff-app:
+    build:
+      context: .
+      network: host
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+    container_name: contexthandoff-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://contexthandoff:contexthandoff@contexthandoff-db:5432/contexthandoff?schema=public
+    ports:
+      - "${CONTEXTHANDOFF_PORT:-3071}:3000"
+    depends_on:
+      contexthandoff-db:
+        condition: service_healthy
+    volumes:
+      - contexthandoff-storage:/app/storage-local
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.middlewares.contexthandoff-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.contexthandoff-http.entryPoints=http"
+      - "traefik.http.routers.contexthandoff-http.rule=Host(`${PUBLIC_HOSTNAME:-handover.oneplaceplatform.com}`)"
+      - "traefik.http.routers.contexthandoff-http.middlewares=contexthandoff-redirect"
+      - "traefik.http.routers.contexthandoff-https.entryPoints=https"
+      - "traefik.http.routers.contexthandoff-https.rule=Host(`${PUBLIC_HOSTNAME:-handover.oneplaceplatform.com}`)"
+      - "traefik.http.routers.contexthandoff-https.tls=true"
+      - "traefik.http.routers.contexthandoff-https.tls.certresolver=letsencrypt"
+      - "traefik.http.services.contexthandoff.loadbalancer.server.port=3000"
+    networks:
+      - contexthandoff-net
+      - coolify
+
+  contexthandoff-db:
+    image: postgres:17
+    container_name: contexthandoff-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: contexthandoff
+      POSTGRES_PASSWORD: contexthandoff
+      POSTGRES_DB: contexthandoff
+    volumes:
+      - contexthandoff-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contexthandoff"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - contexthandoff-net
+
+volumes:
+  contexthandoff-db-data:
+  contexthandoff-storage:
+
+networks:
+  contexthandoff-net:
+  coolify:
+    external: true
