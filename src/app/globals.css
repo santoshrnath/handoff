@@ -69,6 +69,17 @@
   }
 }
 
+@keyframes toast-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @layer utilities {
   .text-gradient-violet {
     background: linear-gradient(180deg, #ffffff 0%, #c4b5fd 100%);

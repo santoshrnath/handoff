@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Loader2, Trash2, Users } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
+import { useConfirm } from "@/components/ui/confirm";
 
 type S = {
   id: string;
@@ -243,12 +244,27 @@ function NewStakeholderRow({
   );
 }
 
-export function DeleteBtn({ url, onDone }: { url: string; onDone: () => void }) {
+export function DeleteBtn({
+  url,
+  onDone,
+  label = "this entry",
+}: {
+  url: string;
+  onDone: () => void;
+  label?: string;
+}) {
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
   return (
     <button
       onClick={async () => {
-        if (!confirm("Delete?")) return;
+        const ok = await confirm({
+          title: `Delete ${label}?`,
+          description: "This can't be undone.",
+          confirmLabel: "Delete",
+          tone: "danger",
+        });
+        if (!ok) return;
         setBusy(true);
         await fetch(url, { method: "DELETE" });
         onDone();

@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud, Loader2, FileText, Sparkles } from "lucide-react";
 import { timeAgo } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 
 type A = {
   id: string;
@@ -24,6 +25,7 @@ export function ArtifactsTab({
   isOwner: boolean;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
@@ -32,6 +34,7 @@ export function ArtifactsTab({
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return;
     setBusy(true);
+    let okCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       setProgress(`${file.name} (${i + 1}/${files.length})`);
@@ -43,11 +46,19 @@ export function ArtifactsTab({
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        alert(`Failed: ${file.name}\n${j.error ?? res.statusText}`);
+        toast.error(`Upload failed: ${file.name}`, j.error ?? res.statusText);
+      } else {
+        okCount++;
       }
     }
     setProgress(null);
     setBusy(false);
+    if (okCount > 0) {
+      toast.success(
+        `${okCount} file${okCount === 1 ? "" : "s"} uploaded`,
+        "AI is extracting structure.",
+      );
+    }
     router.refresh();
   }
 

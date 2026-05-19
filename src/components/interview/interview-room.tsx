@@ -11,6 +11,7 @@ import {
   StopCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 
 type Msg = {
   id: string;
@@ -35,6 +36,7 @@ const PHASES = ["WARM_UP", "CORE", "DEEP_DIVE", "WRAP_UP"] as const;
 
 export function InterviewRoom({ session: initial }: { session: Session }) {
   const router = useRouter();
+  const toast = useToast();
   const [messages, setMessages] = useState<Msg[]>(initial.messages);
   const [phase, setPhase] = useState(initial.phase);
   const [status, setStatus] = useState(initial.status);
@@ -92,7 +94,10 @@ export function InterviewRoom({ session: initial }: { session: Session }) {
       setMessages((m) => [...m, assistantMessage]);
       setPhase(newPhase);
     } catch (err) {
-      alert(String(err instanceof Error ? err.message : err));
+      toast.error(
+        "Interview turn failed",
+        String(err instanceof Error ? err.message : err),
+      );
     } finally {
       setBusy(false);
     }
@@ -124,10 +129,13 @@ export function InterviewRoom({ session: initial }: { session: Session }) {
         `${created.watchOuts} watch-out${created.watchOuts === 1 ? "" : "s"}`,
         `${created.honestNotes} honest note${created.honestNotes === 1 ? "" : "s"}`,
       ].join(" · ");
-      alert(`Synthesized. Added: ${summary}`);
+      toast.success("Interview synthesized", `Added ${summary}.`);
       router.push(`/contexts/${initial.contextId}`);
     } catch (err) {
-      alert(String(err instanceof Error ? err.message : err));
+      toast.error(
+        "Synthesis failed",
+        String(err instanceof Error ? err.message : err),
+      );
     } finally {
       setSynthBusy(false);
     }

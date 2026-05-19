@@ -19,6 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 import { StakeholdersTab } from "./tabs/stakeholders";
 import { DecisionsTab } from "./tabs/decisions";
 import { ProcessTab } from "./tabs/process";
@@ -82,6 +83,7 @@ export function ContextDetail({
   isOwner: boolean;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [tab, setTab] = useState<Tab>("snapshot");
   const [shareOpen, setShareOpen] = useState(false);
   const [interviewBusy, setInterviewBusy] = useState(false);
@@ -101,7 +103,10 @@ export function ContextDetail({
       const { session } = await res.json();
       router.push(`/interviews/${session.id}`);
     } catch (err) {
-      alert(String(err instanceof Error ? err.message : err));
+      toast.error(
+        "Could not start interview",
+        String(err instanceof Error ? err.message : err),
+      );
       setInterviewBusy(false);
     }
   }

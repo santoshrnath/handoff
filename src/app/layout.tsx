@@ -3,6 +3,8 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
 import "./globals.css";
 import { AppShell } from "@/components/shell/app-shell";
+import { ToastProvider } from "@/components/ui/toast";
+import { ConfirmProvider } from "@/components/ui/confirm";
 
 export const metadata: Metadata = {
   title: "ContextBridge — Survive the handoff",
@@ -48,7 +50,11 @@ export default function RootLayout({
         <body className="min-h-screen bg-ink-950 text-slate-100 antialiased selection:bg-violet-glow/40">
           <div className="fixed inset-0 -z-10 bg-executive-gradient" />
           <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:24px_24px]" />
-          <AppShell>{children}</AppShell>
+          <ToastProvider>
+            <ConfirmProvider>
+              <AppShell>{children}</AppShell>
+            </ConfirmProvider>
+          </ToastProvider>
         </body>
       </html>
     </ClerkProvider>

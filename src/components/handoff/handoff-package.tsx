@@ -17,6 +17,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn, initials, timeAgo } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 
 type Handoff = {
   id: string;
@@ -103,6 +104,7 @@ export function HandoffPackage({
   isReceiver: boolean;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [tab, setTab] = useState<Tab>("overview");
   const [qa, setQa] = useState<QA[]>(initialQa);
   const [askInput, setAskInput] = useState("");
@@ -130,7 +132,10 @@ export function HandoffPackage({
         ...cur,
       ]);
     } catch (err) {
-      alert(String(err instanceof Error ? err.message : err));
+      toast.error(
+        "Couldn't answer",
+        String(err instanceof Error ? err.message : err),
+      );
     } finally {
       setAskBusy(false);
     }
@@ -143,9 +148,13 @@ export function HandoffPackage({
         method: "POST",
       });
       if (!res.ok) throw new Error("ack_failed");
+      toast.success("Handoff acknowledged");
       router.refresh();
     } catch (err) {
-      alert(String(err instanceof Error ? err.message : err));
+      toast.error(
+        "Acknowledgement failed",
+        String(err instanceof Error ? err.message : err),
+      );
       setAckBusy(false);
     }
   }
@@ -555,6 +564,7 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 function FeedbackTab({ handoffId }: { handoffId: string }) {
+  const toast = useToast();
   const [content, setContent] = useState("");
   const [daysIn, setDaysIn] = useState<number>(30);
   const [busy, setBusy] = useState(false);
@@ -576,8 +586,12 @@ function FeedbackTab({ handoffId }: { handoffId: string }) {
       if (!res.ok) throw new Error("Failed");
       setOk(true);
       setContent("");
+      toast.success("Gap logged", "Thanks — this feeds the question library.");
     } catch (err) {
-      alert(String(err instanceof Error ? err.message : err));
+      toast.error(
+        "Feedback didn't save",
+        String(err instanceof Error ? err.message : err),
+      );
     } finally {
       setBusy(false);
     }
