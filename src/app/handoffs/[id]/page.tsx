@@ -64,11 +64,16 @@ export default async function HandoffDetail({
         })
       : [];
 
-  const qa = await prisma.qaInteraction.findMany({
-    where: { handoffId: handoff.id },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const [qa, realityChecks] = await Promise.all([
+    prisma.qaInteraction.findMany({
+      where: { handoffId: handoff.id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    prisma.realityCheck.findMany({
+      where: { handoffId: handoff.id },
+    }),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -90,6 +95,12 @@ export default async function HandoffDetail({
         qa={qa.map((q) => ({
           ...q,
           createdAt: q.createdAt.toISOString(),
+        }))}
+        realityChecks={realityChecks.map((rc) => ({
+          itemKind: rc.itemKind,
+          itemId: rc.itemId,
+          status: rc.status,
+          note: rc.note,
         }))}
         isSender={isSender}
         isReceiver={isReceiver}

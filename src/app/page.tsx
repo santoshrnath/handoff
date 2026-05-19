@@ -14,6 +14,8 @@ import {
 import { timeAgo } from "@/lib/utils";
 import { NewHandoffButton } from "@/components/dashboard/new-handoff-button";
 import { LandingHero } from "@/components/dashboard/landing-hero";
+import { NudgesPanel } from "@/components/dashboard/nudges-panel";
+import { refreshStandingNudges } from "@/lib/nudges";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +36,13 @@ export default async function HomePage() {
   const user = await currentUser();
   const firstName = user?.firstName ?? user?.username ?? "there";
 
-  const [contexts, handoffs, interviewCount] = await Promise.all([
+  // Lazy: surface any standing-context refresh nudges before we read the
+  // table below. Cheap idempotent insert.
+  if (ctx.userId) {
+    await refreshStandingNudges({ userId: ctx.userId, tenantId: ctx.tenantId });
+  }
+
+  const [contexts, handoffs, interviewCount, nudges] = await Promise.all([
     prisma.context.findMany({
       where: tenantWhere(ctx),
       orderBy: { updatedAt: "desc" },
@@ -61,6 +69,11 @@ export default async function HomePage() {
         status: { in: ["IN_PROGRESS", "PENDING"] },
       },
     }),
+    prisma.nudge.findMany({
+      where: { forUserId: ctx.userId ?? "__none__", status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
   ]);
 
   const activeContexts = contexts.length;
@@ -82,6 +95,19 @@ export default async function HomePage() {
         </div>
         <NewHandoffButton />
       </div>
+
+      {nudges.length > 0 && (
+        <NudgesPanel
+          nudges={nudges.map((n) => ({
+            id: n.id,
+            kind: n.kind,
+            title: n.title,
+            prompt: n.prompt,
+            cta: n.cta,
+            contextId: n.contextId,
+          }))}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard

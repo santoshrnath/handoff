@@ -70,8 +70,12 @@ export async function generateNextQuestion(opts: {
   history: InterviewMessageInput[];
   phase: InterviewPhase;
   mode?: "full" | "stand_in";
+  /** Aggregated "I wish I'd known" lessons from prior receivers across the
+   * whole tenant. These bias the interrogator toward asking about gaps
+   * that have actually burned receivers before. */
+  learnedGaps?: string[];
 }): Promise<{ question: string; suggestedPhase: InterviewPhase }> {
-  const { context, history, phase, mode = "full" } = opts;
+  const { context, history, phase, mode = "full", learnedGaps = [] } = opts;
 
   const contextBrief = [
     `Context: "${context.title}" (${context.type})`,
@@ -89,6 +93,11 @@ export async function generateNextQuestion(opts: {
       : null,
     `Current phase: ${phase}`,
     `Mode: ${mode === "stand_in" ? "STAND_IN (5-minute focus on next 48 hours)" : "FULL (30-minute structured interview)"}`,
+    learnedGaps.length > 0
+      ? `Gaps prior receivers wished they'd known (use these to guide what to probe, but ask in the outgoing person's frame):\n${learnedGaps
+          .map((g, i) => `  ${i + 1}. ${g}`)
+          .join("\n")}`
+      : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -179,16 +188,23 @@ export interface SynthesisOutput {
 
 const SYNTHESIS_PROMPT = `You are extracting structured handoff records from a transcript between an interviewer (the AI) and an outgoing person.
 
-Rules:
-  • Only include items the outgoing person actually said. Do not invent.
-  • If a stakeholder is named, capture them. If not, omit stakeholders.
-  • Honest notes = anything politically charged, anything about a specific person's behavior or motivations, anything the outgoing person hedged before saying. These default to sensitivity "POLITICAL".
-  • Watch-outs = things that are broken, dangerous, or have been tried and failed.
-  • Decisions = a choice was made; capture rationale + rejected alternatives if mentioned.
-  • Open loops = mid-flight work, stuck items, deferred items.
-  • Keep each field tight. Quote sparingly.
+Be GENEROUS, not conservative. The transcript is short and the outgoing person packed information in. Pull out everything that the receiver would benefit from, even if briefly stated:
 
-Return ONLY valid JSON matching the schema. No prose. No code fences.`;
+  • SNAPSHOT — synthesize a 1-2 sentence description of what this context IS from the answers (e.g. "AI hiring recommendation app for Aramco, with human-in-loop review by their PM"). Capture currentPhase if implied. Capture orgPosition if implied.
+  • STAKEHOLDERS — every named person, even one-line mentions. Infer relationship (DECISION_MAKER / CHAMPION / ALLY / etc.) from how the outgoing person describes them. Pull whatTheyCareAbout, howToWorkWithThem, watchOuts from anywhere in the transcript that touched them.
+  • DECISIONS — any choice that was made, including architectural ("AI makes recommendation, human reviews"), process ("hire only after PM signoff"), or scope. Capture rationale from context if not stated.
+  • OPEN LOOPS — anything mid-flight, stuck, deferred, or "next 48 hours" matters.
+  • WATCH-OUTS — what would break trust, what's been tried and failed, what the receiver could get wrong in their first two weeks. The interviewer often asks these directly — capture the answer plus reasonable severity.
+  • PROCESS — how the work flows, cadences, workarounds. Pull processFlow if there's any description of how things actually get done.
+  • HONEST NOTES — politically charged things, specific-person dynamics, anything hedged. Default sensitivity POLITICAL.
+
+Rules:
+  • Don't invent facts. But DO synthesize: if they said "Rakesh is PM there" and later "speed to delivery is what he cares about", combine into one stakeholder record with both facts.
+  • Don't drop a category just because the answer was one word — extract what's there.
+  • If a question was asked and not answered, don't fabricate.
+  • Quote sparingly; paraphrase tightly.
+
+Return ONLY valid JSON matching the schema. Omit a top-level key only if there is genuinely nothing to put in it. No prose. No code fences.`;
 
 export async function synthesizeTranscript(opts: {
   contextTitle: string;

@@ -1,5 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { ShieldCheck, KeyRound, Mail, Building } from "lucide-react";
+import { DataActions } from "@/components/settings/data-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +26,16 @@ export default async function SettingsPage() {
           <h2 className="text-base font-semibold">Account</h2>
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Row label="Signed in as" value={email ?? "—"} icon={<Mail className="h-3.5 w-3.5" />} />
-          <Row label="User id" value={userId} icon={<Building className="h-3.5 w-3.5" />} />
+          <Row
+            label="Signed in as"
+            value={email ?? "—"}
+            icon={<Mail className="h-3.5 w-3.5" />}
+          />
+          <Row
+            label="User id"
+            value={userId}
+            icon={<Building className="h-3.5 w-3.5" />}
+          />
         </div>
       </section>
 
@@ -55,13 +64,7 @@ export default async function SettingsPage() {
         </ul>
       </section>
 
-      <section className="card">
-        <h2 className="text-base font-semibold">Data export</h2>
-        <p className="mt-1 text-xs text-slate-400">
-          Take your contexts and honest notes with you when you leave the platform.
-          (Coming soon.)
-        </p>
-      </section>
+      <DataActions />
     </div>
   );
 }

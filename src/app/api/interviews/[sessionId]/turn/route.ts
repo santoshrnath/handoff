@@ -71,6 +71,17 @@ export async function POST(
     orderBy: { createdAt: "asc" },
   });
 
+  // 2b. Pull learned gaps — "I wish I'd known" feedback across this tenant's
+  // past handoffs. These bias the interrogator toward probing things that
+  // have actually burned receivers before.
+  const learnedFeedback = await prisma.receiverFeedback.findMany({
+    where: { tenantId: session.tenantId, gapFlag: true },
+    orderBy: { createdAt: "desc" },
+    take: 8,
+    select: { content: true },
+  });
+  const learnedGaps = learnedFeedback.map((f) => f.content);
+
   // 3. Generate next question
   const turn = await generateNextQuestion({
     context: {
@@ -88,6 +99,7 @@ export async function POST(
     })),
     phase: session.phase,
     mode: session.mode as "full" | "stand_in",
+    learnedGaps,
   });
 
   // 4. Persist + update phase

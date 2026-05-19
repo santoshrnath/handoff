@@ -88,18 +88,37 @@ type QA = {
   createdAt: string;
 };
 
+type RealityCheckItemKind =
+  | "STAKEHOLDER"
+  | "DECISION"
+  | "OPEN_LOOP"
+  | "WATCH_OUT"
+  | "PROCESS"
+  | "SNAPSHOT";
+
+type RealityCheckStatus = "CONFIRMED" | "UNCLEAR" | "OUTDATED";
+
+type RealityCheckMap = Array<{
+  itemKind: RealityCheckItemKind;
+  itemId: string;
+  status: RealityCheckStatus;
+  note: string | null;
+}>;
+
 type Tab = "overview" | "ask" | "compare" | "feedback";
 
 export function HandoffPackage({
   handoff,
   honestNotes,
   qa: initialQa,
+  realityChecks: initialRealityChecks,
   isSender,
   isReceiver,
 }: {
   handoff: Handoff;
   honestNotes: Note[];
   qa: QA[];
+  realityChecks: RealityCheckMap;
   isSender: boolean;
   isReceiver: boolean;
 }) {
@@ -107,6 +126,8 @@ export function HandoffPackage({
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("overview");
   const [qa, setQa] = useState<QA[]>(initialQa);
+  const [realityChecks, setRealityChecks] =
+    useState<RealityCheckMap>(initialRealityChecks);
   const [askInput, setAskInput] = useState("");
   const [askBusy, setAskBusy] = useState(false);
   const [ackBusy, setAckBusy] = useState(false);
@@ -500,14 +521,12 @@ export function HandoffPackage({
       )}
 
       {tab === "compare" && (
-        <div className="card">
-          <h2 className="text-base font-semibold">Reality check</h2>
-          <p className="mt-0.5 text-xs text-slate-400">
-            As you learn the ground truth, mark items as confirmed, unclear, or
-            outdated. (Coming soon — for now, capture &lsquo;I wish I&apos;d
-            known&rsquo; entries via the Feedback tab.)
-          </p>
-        </div>
+        <RealityCheckTab
+          handoff={handoff}
+          realityChecks={realityChecks}
+          onChange={setRealityChecks}
+          isReceiver={isReceiver}
+        />
       )}
 
       {tab === "feedback" && isReceiver && (
@@ -559,6 +578,208 @@ function Empty({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center text-xs text-slate-500">
       {children}
+    </div>
+  );
+}
+
+function RealityCheckTab({
+  handoff,
+  realityChecks,
+  onChange,
+  isReceiver,
+}: {
+  handoff: Handoff;
+  realityChecks: RealityCheckMap;
+  onChange: (next: RealityCheckMap) => void;
+  isReceiver: boolean;
+}) {
+  const toast = useToast();
+  const checkFor = (kind: RealityCheckItemKind, id: string) =>
+    realityChecks.find((r) => r.itemKind === kind && r.itemId === id);
+
+  async function mark(
+    kind: RealityCheckItemKind,
+    id: string,
+    status: RealityCheckStatus,
+  ) {
+    try {
+      const res = await fetch(`/api/handoffs/${handoff.id}/reality-check`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ itemKind: kind, itemId: id, status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const next: RealityCheckMap = [
+        ...realityChecks.filter(
+          (r) => !(r.itemKind === kind && r.itemId === id),
+        ),
+        { itemKind: kind, itemId: id, status, note: null },
+      ];
+      onChange(next);
+    } catch (err) {
+      toast.error(
+        "Couldn't save",
+        String(err instanceof Error ? err.message : err),
+      );
+    }
+  }
+
+  const items: Array<{
+    kind: RealityCheckItemKind;
+    id: string;
+    title: string;
+    sub?: string;
+  }> = [
+    ...handoff.context.stakeholders.map((s) => ({
+      kind: "STAKEHOLDER" as const,
+      id: s.id,
+      title: s.name,
+      sub: s.role ?? undefined,
+    })),
+    ...handoff.context.decisions.map((d) => ({
+      kind: "DECISION" as const,
+      id: d.id,
+      title: d.title,
+      sub: d.rationale ?? undefined,
+    })),
+    ...handoff.context.openLoops.map((l) => ({
+      kind: "OPEN_LOOP" as const,
+      id: l.id,
+      title: l.title,
+      sub: l.state,
+    })),
+    ...handoff.context.watchOuts.map((w) => ({
+      kind: "WATCH_OUT" as const,
+      id: w.id,
+      title: w.topic,
+      sub: w.severity,
+    })),
+  ];
+
+  const counts = {
+    CONFIRMED: realityChecks.filter((r) => r.status === "CONFIRMED").length,
+    UNCLEAR: realityChecks.filter((r) => r.status === "UNCLEAR").length,
+    OUTDATED: realityChecks.filter((r) => r.status === "OUTDATED").length,
+    UNMARKED: items.length - realityChecks.length,
+  };
+
+  if (!isReceiver) {
+    return (
+      <div className="card">
+        <h2 className="text-base font-semibold">Reality check</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          The receiver marks each item against ground truth as they learn it.
+          Here&apos;s the current state of their checks:
+        </p>
+        <div className="mt-4 grid grid-cols-4 gap-2 text-center text-[10px]">
+          <Stat n={counts.CONFIRMED} label="Confirmed" tone="emerald" />
+          <Stat n={counts.UNCLEAR} label="Unclear" tone="amber" />
+          <Stat n={counts.OUTDATED} label="Outdated" tone="rose" />
+          <Stat n={counts.UNMARKED} label="Unmarked" tone="slate" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2 className="text-base font-semibold">Reality check</h2>
+      <p className="mt-0.5 text-xs text-slate-400">
+        As you learn the ground truth, tag each item: it matches reality, it&apos;s
+        unclear and needs more digging, or it&apos;s already outdated.
+      </p>
+      <div className="mt-4 grid grid-cols-4 gap-2 text-center text-[10px]">
+        <Stat n={counts.CONFIRMED} label="Confirmed" tone="emerald" />
+        <Stat n={counts.UNCLEAR} label="Unclear" tone="amber" />
+        <Stat n={counts.OUTDATED} label="Outdated" tone="rose" />
+        <Stat n={counts.UNMARKED} label="Unmarked" tone="slate" />
+      </div>
+      <div className="mt-5 space-y-2">
+        {items.map((it) => {
+          const c = checkFor(it.kind, it.id);
+          return (
+            <div
+              key={`${it.kind}-${it.id}`}
+              className="flex flex-col gap-2 rounded-xl border border-white/5 bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="pill text-[10px]">
+                    {it.kind.replace("_", " ")}
+                  </span>
+                  <div className="truncate text-sm font-medium text-white">
+                    {it.title}
+                  </div>
+                </div>
+                {it.sub && (
+                  <div className="mt-0.5 truncate text-[10px] text-slate-500">
+                    {it.sub}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-1.5">
+                {(
+                  [
+                    ["CONFIRMED", "Confirmed", "emerald"],
+                    ["UNCLEAR", "Unclear", "amber"],
+                    ["OUTDATED", "Outdated", "rose"],
+                  ] as const
+                ).map(([s, label, tone]) => {
+                  const active = c?.status === s;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => mark(it.kind, it.id, s)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-[10px] font-medium transition",
+                        active
+                          ? tone === "emerald"
+                            ? "border-emerald-glow/40 bg-emerald-glow/15 text-emerald-100"
+                            : tone === "amber"
+                              ? "border-amber-400/40 bg-amber-400/15 text-amber-100"
+                              : "border-rose-glow/40 bg-rose-glow/15 text-rose-100"
+                          : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/20",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {items.length === 0 && (
+          <Empty>This handoff has no items to check yet.</Empty>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  n,
+  label,
+  tone,
+}: {
+  n: number;
+  label: string;
+  tone: "emerald" | "amber" | "rose" | "slate";
+}) {
+  const toneCls =
+    tone === "emerald"
+      ? "border-emerald-glow/30 bg-emerald-glow/10 text-emerald-200"
+      : tone === "amber"
+        ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+        : tone === "rose"
+          ? "border-rose-glow/30 bg-rose-glow/10 text-rose-200"
+          : "border-white/10 bg-white/[0.03] text-slate-300";
+  return (
+    <div className={cn("rounded-lg border px-2 py-1.5", toneCls)}>
+      <div className="text-sm font-semibold tabular-nums">{n}</div>
+      <div className="mt-0.5 text-[9px] uppercase tracking-[0.12em] opacity-80">
+        {label}
+      </div>
     </div>
   );
 }

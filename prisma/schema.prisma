@@ -108,6 +108,33 @@ enum WatchOutSeverity {
   CRITICAL
 }
 
+enum RealityCheckStatus {
+  CONFIRMED
+  UNCLEAR
+  OUTDATED
+}
+
+enum RealityCheckItemKind {
+  STAKEHOLDER
+  DECISION
+  OPEN_LOOP
+  WATCH_OUT
+  PROCESS
+  SNAPSHOT
+}
+
+enum NudgeKind {
+  STANDING_REFRESH
+  DRIFT
+  FOLLOW_UP
+}
+
+enum NudgeStatus {
+  PENDING
+  DISMISSED
+  ACTED
+}
+
 // ─── Core domain ─────────────────────────────────────────────────────────────
 
 model Context {
@@ -348,6 +375,7 @@ model Handoff {
   context         Context       @relation(fields: [contextId], references: [id], onDelete: Cascade)
   receiverFeedback ReceiverFeedback[]
   qa              QaInteraction[]
+  realityChecks   RealityCheck[]
 
   @@index([tenantId])
   @@index([contextId])
@@ -390,6 +418,50 @@ model QaInteraction {
   handoff      Handoff  @relation(fields: [handoffId], references: [id], onDelete: Cascade)
 
   @@index([handoffId])
+  @@index([tenantId])
+}
+
+// Receiver-side mark of each handoff item against ground truth.
+model RealityCheck {
+  id           String              @id @default(cuid())
+  tenantId     String              @default("default")
+  handoffId    String
+  itemKind     RealityCheckItemKind
+  itemId       String
+  status       RealityCheckStatus
+  note         String?             @db.Text
+  markedBy     String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  handoff      Handoff             @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+
+  @@unique([handoffId, itemKind, itemId])
+  @@index([handoffId])
+  @@index([tenantId])
+}
+
+// Dashboard nudges. "Anything to update on Rakesh?" for standing contexts,
+// or follow-up prompts after a handoff transfer.
+model Nudge {
+  id           String      @id @default(cuid())
+  tenantId     String      @default("default")
+  forUserId    String
+  kind         NudgeKind
+  status       NudgeStatus @default(PENDING)
+
+  contextId    String?
+  handoffId    String?
+  stakeholderId String?
+
+  title        String
+  prompt       String      @db.Text
+  cta          String?
+
+  createdAt    DateTime    @default(now())
+  resolvedAt   DateTime?
+
+  @@index([forUserId, status])
   @@index([tenantId])
 }
 

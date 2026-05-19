@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Briefcase, Building2, Workflow, GitBranch, User, FileBox } from "lucide-react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Briefcase, Building2, Workflow, GitBranch, User, FileBox, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getTemplate, type Template } from "@/lib/templates";
 
 const TYPES = [
   {
@@ -44,16 +45,32 @@ const TYPES = [
   },
 ] as const;
 
-export default function NewContextPage() {
+function NewContextInner() {
   const router = useRouter();
-  const [type, setType] = useState<(typeof TYPES)[number]["id"]>("PROJECT");
+  const params = useSearchParams();
+  const templateId = params?.get("template");
+  const template: Template | null = getTemplate(templateId);
+
+  const [type, setType] = useState<(typeof TYPES)[number]["id"]>(
+    template?.type ?? "PROJECT",
+  );
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(template?.description ?? "");
   const [importance, setImportance] = useState<"LOW" | "MEDIUM" | "HIGH" | "CRITICAL">(
-    "MEDIUM",
+    template?.importance ?? "MEDIUM",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Re-apply template values if the user navigates between templates.
+  useEffect(() => {
+    if (template) {
+      setType(template.type);
+      setDescription(template.description);
+      setImportance(template.importance);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -76,12 +93,43 @@ export default function NewContextPage() {
         throw new Error(j.error ?? "Failed to create context");
       }
       const { context } = await res.json();
+
+      // Seed stakeholders + watch-outs from the template, if any.
+      if (template) {
+        await Promise.all([
+          ...template.stakeholderSkeleton.map((s) =>
+            fetch(`/api/contexts/${context.id}/stakeholders`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(s),
+            }),
+          ),
+          ...template.watchOutSkeleton.map((w) =>
+            fetch(`/api/contexts/${context.id}/watch-outs`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(w),
+            }),
+          ),
+        ]);
+      }
+
       router.push(`/contexts/${context.id}`);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
       setBusy(false);
     }
   }
+
+  const placeholder =
+    template?.titlePlaceholder ??
+    (type === "CLIENT"
+      ? "Acme Corp — strategic account"
+      : type === "STAKEHOLDER"
+        ? "Poorva — VP of Marketing"
+        : type === "PROCESS"
+          ? "Monthly board pack"
+          : "Acme Corp onboarding");
 
   return (
     <form onSubmit={submit} className="mx-auto max-w-3xl space-y-6">
@@ -92,6 +140,43 @@ export default function NewContextPage() {
           interview will fill in the rest.
         </p>
       </div>
+
+      {template && (
+        <div className="card border-violet-glow/30 bg-violet-glow/[0.04]">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-violet-400 shadow-glow">
+              <Sparkles className="h-4 w-4 text-white" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-white">
+                Template: {template.title}
+              </div>
+              <div className="mt-0.5 text-xs text-slate-300">{template.body}</div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                {template.stakeholderSkeleton.length > 0 && (
+                  <span className="pill-violet">
+                    {template.stakeholderSkeleton.length} stakeholder
+                    {template.stakeholderSkeleton.length === 1 ? "" : "s"} pre-seeded
+                  </span>
+                )}
+                {template.watchOutSkeleton.length > 0 && (
+                  <span className="pill-amber">
+                    {template.watchOutSkeleton.length} watch-out
+                    {template.watchOutSkeleton.length === 1 ? "" : "s"} pre-seeded
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.replace("/contexts/new")}
+              className="text-[10px] text-slate-400 hover:text-white"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
 
       <section className="card">
         <div className="label">Type</div>
@@ -138,15 +223,7 @@ export default function NewContextPage() {
             id="title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder={
-              type === "CLIENT"
-                ? "Acme Corp — strategic account"
-                : type === "STAKEHOLDER"
-                  ? "Poorva — VP of Marketing"
-                  : type === "PROCESS"
-                    ? "Monthly board pack"
-                    : "Acme Corp onboarding"
-            }
+            placeholder={placeholder}
             className="input"
             autoFocus
           />
@@ -205,5 +282,13 @@ export default function NewContextPage() {
         </button>
       </div>
     </form>
+  );
+}
+
+export default function NewContextPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-slate-400">Loading…</div>}>
+      <NewContextInner />
+    </Suspense>
   );
 }
