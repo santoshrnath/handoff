@@ -53,9 +53,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/public          ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma          ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-# Include the Prisma CLI so `docker compose exec contexthandoff-app npx prisma db push` works.
+# Include the Prisma CLI so we can run `prisma db push` inside the container.
+# Invoke via `node node_modules/prisma/build/index.js …` rather than the
+# .bin/prisma symlink — the symlink can't see its sibling .wasm files when
+# resolved from /app/node_modules/.bin.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma     ./node_modules/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 
 ENV HOME=/app
 

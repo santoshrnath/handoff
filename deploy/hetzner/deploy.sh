@@ -61,8 +61,11 @@ ssh "$CONTEXTHANDOFF_SSH_HOST" \
   "cd $REMOTE_DIR && CONTEXTHANDOFF_PORT=$CONTEXTHANDOFF_PORT docker compose up -d --build"
 
 echo "▸ prisma db push"
+# Invoke prisma via `node node_modules/prisma/build/index.js` rather than
+# `.bin/prisma` — the bin shim can't resolve its sibling .wasm files in the
+# slim runner image.
 ssh "$CONTEXTHANDOFF_SSH_HOST" \
-  "cd $REMOTE_DIR && docker compose exec -T contexthandoff-app npx prisma db push --skip-generate || true"
+  "cd $REMOTE_DIR && docker compose exec -T contexthandoff-app node node_modules/prisma/build/index.js db push --skip-generate || true"
 
 HOST_IP="${CONTEXTHANDOFF_SSH_HOST#*@}"
 PUBLIC_HOST=$(grep -E '^PUBLIC_HOSTNAME=' "$CONTEXTHANDOFF_ENV_FILE" | head -n1 | cut -d= -f2-)
