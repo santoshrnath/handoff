@@ -80,6 +80,69 @@
   }
 }
 
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0a0c1c !important;
+  }
+  body {
+    @apply !text-black;
+  }
+  /* hide chrome */
+  aside,
+  header.fixed,
+  nav,
+  .print\:hidden {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .card,
+  .glass,
+  .glass-strong {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+    color: #0f172a !important;
+    page-break-inside: avoid;
+  }
+  .pill,
+  .pill-violet,
+  .pill-emerald,
+  .pill-cyan,
+  .pill-amber,
+  .pill-rose {
+    border-color: #cbd5e1 !important;
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+  .text-white,
+  .text-slate-100,
+  .text-slate-200,
+  .text-slate-300 {
+    color: #0f172a !important;
+  }
+  .text-slate-400,
+  .text-slate-500 {
+    color: #475569 !important;
+  }
+  .text-violet-100,
+  .text-violet-200,
+  .text-violet-300,
+  .text-rose-200,
+  .text-rose-300,
+  .text-emerald-200,
+  .text-emerald-300 {
+    color: #334155 !important;
+  }
+  .fixed {
+    display: none !important;
+  }
+}
+
 @layer utilities {
   .text-gradient-violet {
     background: linear-gradient(180deg, #ffffff 0%, #c4b5fd 100%);

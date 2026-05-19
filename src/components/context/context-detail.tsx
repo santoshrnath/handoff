@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
+import { BriefingTab } from "./tabs/briefing";
 import { StakeholdersTab } from "./tabs/stakeholders";
 import { DecisionsTab } from "./tabs/decisions";
 import { ProcessTab } from "./tabs/process";
@@ -29,8 +30,10 @@ import { HonestNotesTab } from "./tabs/honest-notes";
 import { SnapshotTab } from "./tabs/snapshot";
 import { ArtifactsTab } from "./tabs/artifacts";
 import { ShareDialog } from "./share-dialog";
+import { LayoutDashboard } from "lucide-react";
 
 type Tab =
+  | "briefing"
   | "snapshot"
   | "decisions"
   | "stakeholders"
@@ -41,6 +44,7 @@ type Tab =
   | "artifacts";
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { id: "briefing", label: "Briefing", icon: LayoutDashboard },
   { id: "snapshot", label: "Snapshot", icon: Workflow },
   { id: "decisions", label: "Decisions", icon: Gavel },
   { id: "stakeholders", label: "Stakeholders", icon: Users },
@@ -84,7 +88,7 @@ export function ContextDetail({
 }) {
   const router = useRouter();
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>("snapshot");
+  const [tab, setTab] = useState<Tab>("briefing");
   const [shareOpen, setShareOpen] = useState(false);
   const [interviewBusy, setInterviewBusy] = useState(false);
 
@@ -217,6 +221,9 @@ export function ContextDetail({
       </header>
 
       <section>
+        {tab === "briefing" && (
+          <BriefingTab context={context} isOwner={isOwner} />
+        )}
         {tab === "snapshot" && (
           <SnapshotTab context={context} isOwner={isOwner} />
         )}
