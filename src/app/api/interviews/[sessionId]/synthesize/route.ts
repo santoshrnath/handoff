@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth-context";
 import { requireSignedIn } from "@/lib/require-auth";
 import { synthesizeTranscript } from "@/lib/ai/interviewer";
+import { enforceCap, recordUsage } from "@/lib/usage";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,12 +14,16 @@ export const maxDuration = 60;
 // The user can review/edit/delete afterwards — we're populating the skeleton.
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: { sessionId: string } },
 ) {
   const gate = await requireSignedIn();
   if (gate) return gate;
   const ctx = await getAuthContext();
+  const rl = await enforceRateLimit(req, ctx, "ai");
+  if (rl) return rl;
+  const cap = await enforceCap(ctx, "SYNTHESIZE");
+  if (cap) return cap;
 
   const session = await prisma.interviewSession.findFirst({
     where: {
@@ -224,6 +230,8 @@ export async function POST(
     where: { id: session.id },
     data: { status: "COMPLETED", completedAt: new Date() },
   });
+
+  await recordUsage(ctx, "SYNTHESIZE");
 
   return NextResponse.json({ created });
 }

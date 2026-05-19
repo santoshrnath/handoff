@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth-context";
 import { requireSignedIn } from "@/lib/require-auth";
 import { generateNextQuestion } from "@/lib/ai/interviewer";
+import { enforceCap, recordUsage } from "@/lib/usage";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,6 +22,10 @@ export async function POST(
   const gate = await requireSignedIn();
   if (gate) return gate;
   const ctx = await getAuthContext();
+  const rl = await enforceRateLimit(req, ctx, "ai");
+  if (rl) return rl;
+  const cap = await enforceCap(ctx, "INTERVIEW_TURN");
+  if (cap) return cap;
 
   const session = await prisma.interviewSession.findFirst({
     where: {
@@ -117,6 +123,8 @@ export async function POST(
     where: { id: session.id },
     data: { phase: turn.suggestedPhase, status: "IN_PROGRESS" },
   });
+
+  await recordUsage(ctx, "INTERVIEW_TURN");
 
   return NextResponse.json({
     assistantMessage: assistantMsg,

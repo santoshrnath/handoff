@@ -135,6 +135,14 @@ enum NudgeStatus {
   ACTED
 }
 
+enum UsageKind {
+  INTERVIEW_TURN
+  SYNTHESIZE
+  RECEIVER_QA
+  REDACTION_CHECK
+  ARTIFACT_EXTRACT
+}
+
 // ─── Core domain ─────────────────────────────────────────────────────────────
 
 model Context {
@@ -486,7 +494,7 @@ model RealityCheck {
   @@index([tenantId])
 }
 
-// Dashboard nudges. "Anything to update on Rakesh?" for standing contexts,
+// Dashboard nudges. "Anything to update on this relationship?" for standing,
 // or follow-up prompts after a handoff transfer.
 model Nudge {
   id           String      @id @default(cuid())
@@ -508,6 +516,26 @@ model Nudge {
 
   @@index([forUserId, status])
   @@index([tenantId])
+}
+
+// Per-user / per-day / per-kind AI usage counter. Cheap circuit-breaker
+// against runaway costs in a POC. Counters reset each UTC day.
+model UsageCounter {
+  id          String    @id @default(cuid())
+  tenantId    String    @default("default")
+  userId      String
+  dayUtc      String    // YYYY-MM-DD
+  kind        UsageKind
+
+  count       Int       @default(0)
+  inputTokens Int       @default(0)
+  outputTokens Int      @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, dayUtc, kind])
+  @@index([tenantId, dayUtc])
 }
 
 // Drift detection — flag when reality diverges from documented context.

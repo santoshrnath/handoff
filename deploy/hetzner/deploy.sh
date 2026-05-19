@@ -69,7 +69,7 @@ ssh "$CONTEXTHANDOFF_SSH_HOST" \
 
 HOST_IP="${CONTEXTHANDOFF_SSH_HOST#*@}"
 PUBLIC_HOST=$(grep -E '^PUBLIC_HOSTNAME=' "$CONTEXTHANDOFF_ENV_FILE" | head -n1 | cut -d= -f2-)
-PUBLIC_HOST="${PUBLIC_HOST:-handover.oneplaceplatform.com}"
+PUBLIC_HOST="${PUBLIC_HOST:-localhost}"
 
 echo
 echo "✓ Deployed."

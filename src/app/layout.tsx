@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description:
     "The tacit knowledge that dies in transitions, made survivable. AI-interrogated handoff packages with a trust layer, receiver Q&A, and drift detection over time.",
   metadataBase: new URL(
-    process.env.PUBLIC_URL ?? "https://handover.oneplaceplatform.com",
+    process.env.PUBLIC_URL ?? "http://localhost:3000",
   ),
   openGraph: {
     title: "ContextBridge",

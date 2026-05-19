@@ -7,6 +7,8 @@ import { extractTextFromBuffer } from "@/lib/extract-text";
 import { extractFromArtifact } from "@/lib/ai/artifact-extract";
 import { env } from "@/lib/env";
 import type { Prisma } from "@prisma/client";
+import { enforceCap, recordUsage } from "@/lib/usage";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,6 +18,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const gate = await requireSignedIn();
   if (gate) return gate;
   const ctx = await getAuthContext();
+  const rl = await enforceRateLimit(req, ctx, "write");
+  if (rl) return rl;
+  // The AI-extract path is what burns tokens; cap that specifically.
+  const cap = await enforceCap(ctx, "ARTIFACT_EXTRACT");
+  if (cap) return cap;
   const owned = await prisma.context.findFirst({
     where: { id: params.id, ownerUserId: ctx.userId ?? "__none__" },
   });
@@ -83,6 +90,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         const ai = await extractFromArtifact({ fileName: file.name, text });
         summary = ai.summary ?? null;
         extractedJson = ai as unknown as Prisma.InputJsonValue;
+        await recordUsage(ctx, "ARTIFACT_EXTRACT");
       } catch {
         // AI extraction failures shouldn't fail the upload.
       }

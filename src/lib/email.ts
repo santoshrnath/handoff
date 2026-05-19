@@ -16,7 +16,7 @@ export async function sendEmail(opts: SendEmailOpts): Promise<{
   detail?: string;
 }> {
   const key = process.env.RESEND_API_KEY;
-  const from = opts.from ?? process.env.EMAIL_FROM ?? "ContextBridge <noreply@handover.oneplaceplatform.com>";
+  const from = opts.from ?? process.env.EMAIL_FROM ?? "ContextBridge <noreply@example.com>";
 
   if (!key) {
     // No-op fallback: log so we can see in container logs that an email
@@ -59,7 +59,7 @@ export async function sendEmail(opts: SendEmailOpts): Promise<{
 }
 
 export function publicUrl(): string {
-  return process.env.PUBLIC_URL ?? "https://handover.oneplaceplatform.com";
+  return process.env.PUBLIC_URL ?? "http://localhost:3000";
 }
 
 export function handoffEmailTemplate(opts: {
@@ -110,7 +110,7 @@ export function handoffEmailTemplate(opts: {
         </p>
       </div>
       <p style="margin-top:16px;font-size:11px;color:#94a3b8;text-align:center;">
-        Sent via ContextBridge · handover.oneplaceplatform.com
+        Sent via ContextBridge
       </p>
     </div>
   </body>

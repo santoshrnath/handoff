@@ -190,7 +190,7 @@ const SYNTHESIS_PROMPT = `You are extracting structured handoff records from a t
 
 Be GENEROUS, not conservative. The transcript is short and the outgoing person packed information in. Pull out everything that the receiver would benefit from, even if briefly stated:
 
-  • SNAPSHOT — synthesize a 1-2 sentence description of what this context IS from the answers (e.g. "AI hiring recommendation app for Aramco, with human-in-loop review by their PM"). Capture currentPhase if implied. Capture orgPosition if implied.
+  • SNAPSHOT — synthesize a 1-2 sentence description of what this context IS from the answers (e.g. "AI hiring recommendation app for an enterprise client, with human-in-loop review by their PM"). Capture currentPhase if implied. Capture orgPosition if implied.
   • STAKEHOLDERS — every named person, even one-line mentions. Infer relationship (DECISION_MAKER / CHAMPION / ALLY / etc.) from how the outgoing person describes them. Pull whatTheyCareAbout, howToWorkWithThem, watchOuts from anywhere in the transcript that touched them.
   • DECISIONS — any choice that was made, including architectural ("AI makes recommendation, human reviews"), process ("hire only after PM signoff"), or scope. Capture rationale from context if not stated.
   • OPEN LOOPS — anything mid-flight, stuck, deferred, or "next 48 hours" matters.
@@ -199,7 +199,7 @@ Be GENEROUS, not conservative. The transcript is short and the outgoing person p
   • HONEST NOTES — politically charged things, specific-person dynamics, anything hedged. Default sensitivity POLITICAL.
 
 Rules:
-  • Don't invent facts. But DO synthesize: if they said "Rakesh is PM there" and later "speed to delivery is what he cares about", combine into one stakeholder record with both facts.
+  • Don't invent facts. But DO synthesize: if they said "X is the PM there" and later "speed to delivery is what X cares about", combine into one stakeholder record with both facts.
   • Don't drop a category just because the answer was one word — extract what's there.
   • If a question was asked and not answered, don't fabricate.
   • Quote sparingly; paraphrase tightly.

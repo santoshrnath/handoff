@@ -9,6 +9,8 @@ import {
   includedNoteIdsFor,
   isSender,
 } from "@/lib/handoff-access";
+import { enforceCap, recordUsage } from "@/lib/usage";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,6 +22,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const gate = await requireSignedIn();
   if (gate) return gate;
   const ctx = await getAuthContext();
+  const rl = await enforceRateLimit(req, ctx, "ai");
+  if (rl) return rl;
+  const cap = await enforceCap(ctx, "RECEIVER_QA");
+  if (cap) return cap;
 
   const handoff = await prisma.handoff.findUnique({
     where: { id: params.id },
@@ -189,6 +195,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       citations: result.citations,
     },
   });
+
+  await recordUsage(ctx, "RECEIVER_QA");
 
   return NextResponse.json({ qa });
 }

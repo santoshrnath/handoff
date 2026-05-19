@@ -118,6 +118,12 @@ export function InterviewRoom({ session: initial }: { session: Session }) {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
+        if (j.code === "usage_cap_reached") {
+          throw new Error(j.message ?? "Daily limit reached.");
+        }
+        if (j.code === "rate_limited") {
+          throw new Error(j.message ?? "Slow down a moment.");
+        }
         throw new Error(j.error ?? "Interview turn failed");
       }
       const { assistantMessage, phase: newPhase } = await res.json();
